@@ -1,6 +1,9 @@
 import { createWebHashHistory } from "./history/hash.js"
 import { createWebHistory } from "./history/history.js"
-
+import {reactive, ref, shallowRef, computed, unref, provide} from "vue";
+import {RouterLink} from "./router-link.js"
+import { RouterView } from "./router-view.js"
+import { createRouterMatcher } from "./matcher/index.js"
 // 拍平路由的数据处理，options.routes是用户的配置，难以理解，不好维护，使用的时候也不方便
 /*
 / => record {Home}
@@ -18,105 +21,170 @@ import { createWebHistory } from "./history/history.js"
 
  */
 
-function normalizeRouteRecord(record) { // 格式化用户的参数
-   return {
-        path: record.path, // 状态机 解析路径的分数 算出匹配规则
-        meta: record.meta || {},
-       // 钩子函数
-        beforeEnter: record.beforeEnter,
-        name: record.name,
-        components: {
-            default: record.component // 循环
-        },
-        children: record.children || []
-    }
 
-}
-function createRouteRecordMatcher(record, parent) { // 创造匹配记录，构建父子关系
-    // 对record之中的path做一些修改 // 正则的情况
-    // 这块不考虑正则了
-    const matcher = {
-        path: record.path,
-        record,
-        parent,
-        children: []
-    }
-
-    if (parent) {
-        parent.children.push(matcher)
-    }
-
-    return matcher
+const START_LOCATION_NORMALIZED = { // 初始化路由系统之中的默认参数
+    path: '/',
+    // params: {}, // 路径参数
+    // query: {},
+    matched: [], // 当前路径匹配到的记录
 }
 
 
-// 树的遍历
-function createRouterMatcher(routes) {
-    const matchers = []
-    function addRoute(route, parent) {
-        let normalizedRecord = normalizeRouteRecord(route)
-        if (parent) {
-            normalizedRecord.path = parent.path + normalizedRecord.path
-        }
-        // console.log(normalizedRecord, 39)
-        const matcher = createRouteRecordMatcher(normalizedRecord, parent)
-        if ('children' in normalizedRecord) {
-            let children = normalizedRecord.children
-            for (let i = 0; i < children.length; i++) {
-                addRoute(children[i], matcher)
-            }
-        }
-        matchers.push(matcher)
-    }
-    routes.forEach(route => {
-        addRoute(route)
-    })
-    // console.log(matchers)
-
-    return {
-        addRoute // 动态的添加路由 面试问：路由动态的添加，这就是动态的api
-    }
-}
 
 function createRouter(options) {
     // console.log(options) // {history: {}, routes: []}
     const routerHistory = options.history
+
+
+    // console.log(routerHistory, 86)
+
     // console.log(options.routes) // 格式化路由的配置 拍平 /home home /a a 组件，这样的话比较好
 
     const matcher = createRouterMatcher(options.routes)
 
 
+
+    // obj.value.新值 obj.value = 响应式数据
+
+    // 后续改变数据的value就可以更新视图了
+    const currentRoute = shallowRef(START_LOCATION_NORMALIZED)
+
+
+    function resolve(to) {
+        // to可能是字符串 可能是对象
+        // to = '/' to = {path: '/'}
+
+        if (typeof to === 'string') {
+            return matcher.resolve({
+                path: to
+            })
+        } else {
+            // 暂时没有考虑对象的情况
+            return matcher.resolve(to)
+        }
+    }
+
+    // 只能注册一次
+    let ready
+    function markAsReady() {// 用来
+        if (ready) {
+            return
+        }
+        ready = true // 用来标记已经渲染完毕
+        routerHistory.listen((to) => {
+            const targetLocation = resolve(to)
+            const from = currentRoute.value
+
+            // 在切换前进后退 是替换模式不是push模式
+            finalizeNavigation(targetLocation, from, true)
+        })
+
+    }
+
+
+    function finalizeNavigation(to, from, replaced) {
+        // 第一次的话就直接replace
+        if (from === START_LOCATION_NORMALIZED || replaced) {
+            routerHistory.replace(to.path)
+        } else {
+            routerHistory.push(to.path)
+        }
+        currentRoute.value = to // 更新最新的路径
+        // console.log(currentRoute.value, 157)
+
+        // 监控前进和后退
+        // 如果是初始化，我们还需要注入一个listen去更新currentRoute的值，这样数据变化后可以重新渲染试图
+
+        // 标记
+        markAsReady()
+
+
+    }
+
+    function pushWithRedirect(to) { // 通过路径匹配到对应的记录，更新 currentRoute
+
+        const targetLocation = resolve(to)
+        const from = currentRoute.value
+
+
+        // 根据是不是第一次 ，来决定是push还是replace
+        // console.log(targetLocation, 111, from)
+
+        // 第一次的话，就直接replace了。直接产生新的路由
+        finalizeNavigation(targetLocation, from)
+
+        // 路由的钩子在跳转前，可以做路由的拦截
+    }
+
+    function push(to) {
+        // console.log(to)
+        // debugger
+        return pushWithRedirect(to)
+    }
+
+    // console.log(reactiveRoute)
+    // reactiveRoute.path = 111
+    // let { path } = reactive(reactiveRoute)
+    // console.log(path)
+    // path = 22
+    // console.log(path)
+
+    // START_LOCATION_NORMALIZED // reactive computed
+    // console.log(currentRoute)
+    // console.log(matcher)
+    // debugger
     const router = {
+        push,
+        replace() {},
         install(app) {
+            const router = this
+            // vue2之中有两个属性，$router里面包含的是方法 $route里面包含的是属性
+            app.config.globalProperties.$router = router // 方法
+            // app.config.globalProperties.$route = currentRoute.value
+            Object.defineProperty(app.config.globalProperties, '$route', { // 属性
+                get: () => unref(currentRoute),
+                enumerable: true
+            })
+
+
+
+
+
+            // 将数据使用计算属性再次包裹一次
+            const reactiveRoute = {}
+            for (let key in START_LOCATION_NORMALIZED) {
+                reactiveRoute[key] = computed(() => {
+                    return currentRoute.value[key]
+                })
+            }
+            app.component('RouterLink', RouterLink)
+
+
+            app.component('RouterView', RouterView)
+
+
+            app.provide('router', router) // 暴露路由对象
+
+            // let router = useRouter() // inject('router')
+            app.provide('route location', reactive(reactiveRoute))
+
+            // let route = useRoute() // inject('route location')
+
+
+
             // 路由的核心是什么？？？路径切换 更新页面 需要有一个响应式的变量
             // 路由的核心就是页面切换，重新渲染，
             // console.log('路由的安装')
 
             // 注册两个全局组件
-            app.component('RouterLink', {
-                setup: (props, {slots, attrs, emit, expose}) => {
-                    return () => {
-                        return (
-                            <a>{
-                                slots.default && slots.default()
-                            }</a>
-                        )
-                    }
-                }
-            })
 
 
-            app.component('RouterView', {
-                setup(props, {slots}) {
-                    return () => {
-                        return (
-                            <div>空的</div>
-                        )
-                    }
-                }
-            })
-
-
+            if (currentRoute.value == START_LOCATION_NORMALIZED) {
+                // 默认是第一次，默认就是初始化
+                // console.log("默认第一次", routerHistory)
+                // 初始化需要通过路由系统先进行一次跳转，发生匹配
+                push(routerHistory.location)
+            }
 
             // 后续还有逻辑
 

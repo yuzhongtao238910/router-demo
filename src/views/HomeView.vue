@@ -6,6 +6,10 @@
     <hr>
 
     <router-view></router-view>
+
+    <hr>
+
+    <router-view></router-view>
   </div>
 </template>
 
@@ -15,5 +19,26 @@
 
 export default {
   name: 'HomeView',
+  mounted() {
+    console.log(this.$router, this.$route)
+  }
 }
 </script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
