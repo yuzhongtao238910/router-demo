@@ -28,8 +28,52 @@ const START_LOCATION_NORMALIZED = { // 初始化路由系统之中的默认参�
     // query: {},
     matched: [], // 当前路径匹配到的记录
 }
+function useCallback() {
+    const handlers = []
+
+    function add(handler) {
+        handlers.push(handler)
+    }
+
+    return {
+        add,
+        list: () => handlers
+    }
+}
+function extractChangeRecords(to, from) {
+    const leavingRecords = []
+    const updatingRecords = []
+    const enteringRecords = []
+
+    console.log(to, from , 48)
+
+    // /a/b => /a/b/c
+    // /a/b/c => /a/b
+
+    const len = Math.max(to.matched.length, from.matched.length)
+
+    for (let i = 0; i < len; i++) {
+        const recordFrom = from.matched[i]
+        if (recordFrom) {
+            to.matched.find(record => record.path == recordFrom.path)
+        }
+
+        const recordTo = to.matched[i]
+        if (recordTo) {
+
+        }
+    }
 
 
+    return [leavingRecords,
+        updatingRecords,
+        enteringRecords
+
+    ]
+
+
+
+}
 
 function createRouter(options) {
     // console.log(options) // {history: {}, routes: []}
@@ -48,6 +92,12 @@ function createRouter(options) {
 
     // 后续改变数据的value就可以更新视图了
     const currentRoute = shallowRef(START_LOCATION_NORMALIZED)
+
+
+    const beforeGuards = useCallback()
+    const beforeResolveGuards = useCallback()
+    const afterGuards = useCallback()
+
 
 
     function resolve(to) {
@@ -100,6 +150,21 @@ function createRouter(options) {
 
 
     }
+    async function navigate(to, from) {
+        // 在做导航的时候，需要知道哪个组件是进入的，哪个是离开的
+        // 还要知道哪个组件是更新的
+
+        // /home/a/b
+
+        // /home/a/c
+
+        // c是进入的，b是离开的    home和 a是更新的
+
+
+        // 从to和from
+        // 之中找哪些是离开 哪些是进入，哪些是更新
+        const [leavingRecords, updatingRecords, enteringRecords] = extractChangeRecords(to, from )
+    }
 
     function pushWithRedirect(to) { // 通过路径匹配到对应的记录，更新 currentRoute
 
@@ -110,8 +175,25 @@ function createRouter(options) {
         // 根据是不是第一次 ，来决定是push还是replace
         // console.log(targetLocation, 111, from)
 
+
+        // 路由的导航守卫有几种 啊？？？
+        /**
+         * 全局钩子
+         * 路由钩子
+         * 组件钩子
+         */
+
+        navigate(targetLocation, from).then(() => {
+            return finalizeNavigation(targetLocation, from)
+        }).then(() => {
+            // 当导航切换完毕后， 执行 afterEach
+            for (const guard of afterGuards.list()) {
+                guard(to, from)
+            }
+        })
+
         // 第一次的话，就直接replace了。直接产生新的路由
-        finalizeNavigation(targetLocation, from)
+
 
         // 路由的钩子在跳转前，可以做路由的拦截
     }
@@ -133,8 +215,14 @@ function createRouter(options) {
     // console.log(currentRoute)
     // console.log(matcher)
     // debugger
+    // const beforeGuards = useCallback()
+    // const beforeResolveGuards = useCallback()
+    // const afterGuards = useCallback()
     const router = {
         push,
+        beforeEach: beforeGuards.add, // 这3个  可以注册多个，所以是一个发布订阅模式
+        afterEach: afterGuards.add, //
+        beforeResolve: beforeResolveGuards.add, //
         replace() {},
         install(app) {
             const router = this
@@ -185,6 +273,9 @@ function createRouter(options) {
                 // 初始化需要通过路由系统先进行一次跳转，发生匹配
                 push(routerHistory.location)
             }
+
+
+            // console.log(beforeGuards.list())
 
             // 后续还有逻辑
 

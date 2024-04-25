@@ -19,10 +19,27 @@
 
 export default {
   name: 'HomeView',
+  beforeRouteEnter(to, from, next) {
+    console.log("beforeRouteEnter", to)
+  },
+  beforeRouteUpdate(to, from, next) {
+    // 路由本身的更新
+    console.log('beforeRouteUpdate')
+  },
+  beforeRouteLeave(to, from, next) {
+    console.log('beforeRouteLeave', to)
+  },
   mounted() {
     console.log(this.$router, this.$route)
   }
 }
+
+// a -> leave  （beforeRouteUpdate）
+// b -> beforeEach
+// b -> beforeEnter
+// b -> beforeRouteEnter
+// b -> resolve
+// afterEach
 </script>
 
 

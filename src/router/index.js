@@ -41,7 +41,10 @@ const routes = [
           }
         }
       }
-    ]
+    ],
+    beforeEnter(to, from ,next) {
+      console.log("before-enter", to)
+    }
   },
   {
     path: '/about',
@@ -58,4 +61,48 @@ const router = createRouter({
   routes
 })
 
+
+
+// 全局钩子
+
+// 导航开始之前
+router.beforeEach((to, from ,next) => {
+  console.log('beforeEach', 'to')
+})
+
+// 导航解析完成
+router.beforeResolve((to, from ,next) => {
+  console.log('beforeResolve', 'to')
+})
+
+
+//
+router.afterEach((to, from,next) => {
+  console.log('afterEach', 'to')
+})
+
 export default router
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
