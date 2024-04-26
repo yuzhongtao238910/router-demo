@@ -69,6 +69,22 @@ const router = createRouter({
 router.beforeEach((to, from ,next) => {
   console.log('beforeEach', 'to')
 })
+router.beforeEach((to, from ,next) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      console.log("beforeEach1", to)
+      resolve()
+    }, 1000)
+  })
+})
+router.beforeEach((to, from ,next) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      console.log("beforeEach2", to)
+      resolve()
+    }, 2000)
+  })
+})
 
 // 导航解析完成
 router.beforeResolve((to, from ,next) => {

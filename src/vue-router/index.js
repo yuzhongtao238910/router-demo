@@ -53,14 +53,25 @@ function extractChangeRecords(to, from) {
     const len = Math.max(to.matched.length, from.matched.length)
 
     for (let i = 0; i < len; i++) {
+        // /a   /b/c
         const recordFrom = from.matched[i]
         if (recordFrom) {
-            to.matched.find(record => record.path == recordFrom.path)
+            // 去的有 来的也有 那么就是更新的操作
+            if (to.matched.find(record => record.path == recordFrom.path)) {
+                updatingRecords.push(recordFrom)
+            } else {
+                // 去的有，来的没有 /a/b/c /a/b/d
+                leavingRecords.push(recordFrom)
+            }
         }
+
 
         const recordTo = to.matched[i]
         if (recordTo) {
-
+            // /a/b /a/b/c
+            if (!from.matched.find(record => record.path === recordTo.path)) {
+                enteringRecords.push(recordTo)
+            }
         }
     }
 
@@ -68,11 +79,42 @@ function extractChangeRecords(to, from) {
     return [leavingRecords,
         updatingRecords,
         enteringRecords
-
     ]
 
 
 
+}
+
+function guardToPromise(guard, to, from, record) {
+    return () => new Promise((resolve, reject) => {
+        const next = () => resolve()
+        let guardReturn = guard.call(record, to, from, next)
+
+        // 如果不调用next 最终也会调用next 用户可以不调用next
+        return Promise.resolve(guardReturn).then(next)
+    })
+}
+
+function extractComponentsGuards(matched, guardType, to, from) {
+    const guards = []
+
+    for (const record of matched) {
+        // 获取当前的组件
+        let rawComponent = record.components.default
+        // 拿到beforeRouteLeave
+        const guard = rawComponent[guardType]
+
+        // 我需要将钩子全部串联在一起
+        guard && guards.push(guardToPromise(guard, to, from, record))
+    }
+
+    return guards
+}
+
+// promise的组合函数
+function runGuardsQueue(guards) { // [fn () => promise fn () => promise]
+    // 链式调用
+    return guards.reduce((promise, guard) => promise.then(() => guard()), Promise.resolve())
 }
 
 function createRouter(options) {
@@ -164,6 +206,66 @@ function createRouter(options) {
         // 从to和from
         // 之中找哪些是离开 哪些是进入，哪些是更新
         const [leavingRecords, updatingRecords, enteringRecords] = extractChangeRecords(to, from )
+
+
+        console.log(leavingRecords, updatingRecords, enteringRecords, 178)
+
+        // 离开的时候，需要从后往前： /home/a /about
+
+        // a销毁 home销毁 换成about
+
+        let guards = extractComponentsGuards(
+            leavingRecords.reverse(),
+            'beforeRouteLeave',
+            to,
+            from
+        )
+        // console.log(guards, 215)
+
+        // 如果guards里面有多个的话，需要按照顺序执行
+        return runGuardsQueue(guards).then(() => {
+            guards = []
+
+            for (const guard of beforeGuards.list()) {
+                guards.push(guardToPromise(guard, to, from, guard))
+            }
+
+            return runGuardsQueue(guards)
+        }).then(() => {
+            // guards = []
+            guards = extractComponentsGuards(
+                updatingRecords,
+                'beforeRouteUpdate',
+                to,
+                from
+            )
+            // console.log()
+            return runGuardsQueue(guards)
+        }).then(() => {
+            guards = []
+            // beforeEnter
+            for (const record of to.matched) {
+                if (record.beforeEnter) {
+                    guards.push(guardToPromise(record.beforeEnter, to, from, record))
+                }
+            }
+            return runGuardsQueue(guards)
+        }).then(() => {
+            guards = extractComponentsGuards(
+                enteringRecords,
+                'beforeRouteEnter',
+                to, from
+            )
+            return runGuardsQueue(guards)
+        }).then(() => {
+            guards = []
+            // beforeEnter
+            for (const guard of beforeResolveGuards.list()) {
+                guards.push(guardToPromise(guard, to, from, guard))
+            }
+            return runGuardsQueue(guards)
+        })
+
     }
 
     function pushWithRedirect(to) { // 通过路径匹配到对应的记录，更新 currentRoute
